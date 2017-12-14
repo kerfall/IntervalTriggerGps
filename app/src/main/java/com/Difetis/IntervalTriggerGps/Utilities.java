@@ -9,9 +9,9 @@ import android.content.res.Resources;
 
 
 public class Utilities {
- public static String APP_DIR = Main.SDCARD+"/Logfile";
- public static String LOG_FILE_PATH = APP_DIR+"/ folome_log.txt";  
- 
+ //public static String APP_DIR = Main.SDCARD+"/Logfile";
+ //public static String LOG_FILE_PATH = APP_DIR+"/ folome_log.txt";
+ /*
 //Creating App Directory For Log File  
 public static void InitLog() {  
 	
@@ -19,7 +19,7 @@ public static void InitLog() {
 	createAppDirectory();
 }
  
- 
+
 //Creating App Directory For Log File  
  public static void createAppDirectory() {  
 	File dir1 = new File(APP_DIR);  
@@ -54,8 +54,6 @@ public static void deleteLog() {
   }
    
  } 
- 
-
 
  public static String GetUnit(Resources res, int iUnit){
 	  // on calcule le nombre de metre repr�sentant l'intervalle propos�
@@ -78,7 +76,7 @@ public static void deleteLog() {
  	
  	return csUnit;
  }       
-
+*/
 
  public static double MetreToDisplay(int iLengthUnit, double dValue){
  	  switch(iLengthUnit){

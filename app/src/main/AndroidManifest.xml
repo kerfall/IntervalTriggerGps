@@ -18,7 +18,6 @@
             </intent-filter>
         </activity>
     </application>
-    <uses-permission android:name="android.permission.WAKE_LOCK" ></uses-permission>
     <uses-permission android:name="android.permission.VIBRATE"></uses-permission>
     <uses-permission android:name="android.permission.WRITE_SETTINGS"></uses-permission>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"></uses-permission>

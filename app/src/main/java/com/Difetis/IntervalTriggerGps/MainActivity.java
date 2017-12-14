@@ -1,10 +1,13 @@
 package com.Difetis.IntervalTriggerGps;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
+import android.content.pm.PackageManager;
+import android.location.LocationProvider;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
@@ -29,6 +32,7 @@ import android.location.GpsStatus;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
+
 import java.io.File;
 import java.io.FileWriter;
 import java.io.FileInputStream;
@@ -48,92 +52,110 @@ import java.util.Locale;
 
 
 public class MainActivity extends Activity implements AdapterView.OnItemClickListener {
+
+    // chrono datas
     public final static String APP_PATH_SD_CARD = "/csvIntervalTrigger";
     Button stop;
-    long MillisecondTime, StartTime, TimeBuff, LapTime, UpdateTime = 0L;
+    long MillisecondTime, StartTime, LapTime = 0L;
     Handler chronoHandler;
     Handler timeHandler;
     int Seconds, Minutes, MilliSeconds, CentiSeconds;
     float lastscreenBrightness;
     ListView lapList;
-    String[] ListElements = new String[]{};
+
+    List<String> ListLaps;
     List<String> ListElementsArrayList;
+    List<String> ListGpsArrayList;
     ArrayAdapter<String> adapter;
     private TextView chrono;
+    String _currentDate;
 
-    protected static final int ACTIVE = 0;
-    protected static final int PAUSED = 1;
-    protected static final int INIT = 2;
-    protected static final int D_RUN = 1;
-    protected static final int D_NORUN = 0;
-    protected static final int D_GPSOFF = 2;
-    boolean	m_bLog = false;
-    int	m_iRun = 0;
-    boolean m_bReload = false;
-    protected boolean m_bPositionGPS = false;
-    protected double	m_dParcours = 0; // le parcours à effectuer en m
-    int m_iStep = 5;
-    int	m_iLengthUnit = 1; // km
-    int m_iRefreshFreq = 5;
-    int	m_iSpeedUnit = 1; // km/h
-    int m_iIntervalle = 1000; // tous les 1000 m
-    int m_iLangue = 0; // langue de l'application par défaut
-    int	m_iState = INIT;
-    private Intent intentGps;
-    double _dGravityVector = 0;
+    // gps data
+    String _startTime;
 
-    Messenger mService = null;
-    boolean mIsBound;
-    final Messenger mMessenger = new Messenger(new IncomingHandler());
-
-
-    class IncomingHandler extends Handler {
-        @Override
-        public void handleMessage(Message msg) {
-            switch (msg.what) {
-                case ServiceGps.MSG_GET_LONGUEUR:
-                    break;
-                case ServiceGps.MSG_GET_GPSSTATUS:
-                    String str1 = msg.getData().getString("str1");
-                    break;
-                default:
-                    super.handleMessage(msg);
-            }
-        }
-    }
+    // GPSTracker service class
+    GPSTracker gps;
 
     // callback class to update chrono
     public Runnable runnable = new Runnable() {
 
         public void run() {
 
-            MillisecondTime = SystemClock.uptimeMillis() - LapTime;
+            // update data every second while initializing gps
+            int postDelay = 1000;
 
-            UpdateTime = TimeBuff + MillisecondTime;
+            // if chrono not started, then we are maybe waiting for gps
+            if (StartTime == 0L) {
 
-            Seconds = (int) (UpdateTime / 1000);
+                if (gps != null) {
 
-            Minutes = Seconds / 60;
+                    ListElementsArrayList.clear();
+                    String latitude = String.format("Latitude %f", gps.getLatitude());
+                    String longitude = String.format("Longitude %f", gps.getLongitude());
+                    String accuracy = String.format("Accuracy %f", gps.getAccuracy());
+                    //String speed = String.format("Speed %f", gps.getSpeed());
+                    //String satellites = String.format("Speed %d", gps.getSatellites());
 
-            Seconds = Seconds % 60;
+                    // add gps information to list
+                    ListElementsArrayList.add(latitude);
+                    ListElementsArrayList.add(longitude);
+                    ListElementsArrayList.add(accuracy);
+                    //ListElementsArrayList.add(speed);
+                    //ListElementsArrayList.add(satellites);
 
-            MilliSeconds = (int) (UpdateTime % 1000);
+                    adapter.notifyDataSetChanged();
 
-            CentiSeconds = MilliSeconds / 10;
+                    if (gps.isGPSReady()) {
+                        chrono.setText("Ready");
 
-            chrono.setText("" + String.format("%02d", Minutes) + ":"
-                    + String.format("%02d", Seconds) + ":"
-                    + String.format("%02d", CentiSeconds));
+                    } else {
+                        // add an animation effect on waiting for gps
+                        String message = chrono.getText().toString();
 
-            chronoHandler.postDelayed(this, 0);
+                        if (message.startsWith("Search") && message.length() < 9) {
+                            message += ".";
+                        } else {
+                            message = "Search";
+                        }
+                        chrono.setText(message);
+
+                    }
+                } else {
+
+                    chrono.setText("GPS Out");
+                }
+            } else {
+
+                // if GPS service is launched and has changed, we record a trackpoint
+                if (gps != null && gps.isGPSUpdated()) {
+                    String currentTime = new SimpleDateFormat("HH:mm:ss.SSS").format(new Date());
+
+                    String gpsTrckpt = String.format("<trkpt lat=\"%.7f\" lon=\"%.7f\"><time>%sT%sZ</time></trkpt>\\n",
+                            gps.getLatitude(),
+                            gps.getLongitude(), _currentDate, currentTime);
+
+                    if (ListGpsArrayList != null) {
+                        ListGpsArrayList.add(gpsTrckpt);
+                    }
+
+                    // don't write the same point twice
+                    gps.setGPSUpdated(false);
+                }
+                MillisecondTime = SystemClock.uptimeMillis() - LapTime;
+
+                DisplayTime(MillisecondTime);
+
+                // update data every 1/100 seconds is enough
+                postDelay = 10;
+            }
+
+
+            chronoHandler.postDelayed(this, postDelay);
         }
 
     };
     private TextView actualTime;
     private Vibrator vibrator;
-
-
-
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -141,14 +163,6 @@ public class MainActivity extends Activity implements AdapterView.OnItemClickLis
 
         Settings.System.putInt(this.getContentResolver(),
                 Settings.System.SCREEN_BRIGHTNESS, 0);
-
-        if(CheckIfServiceIsRunning() == false){
-            // on demarre le service dès la création pour faire le fix
-            intentGps=new Intent(this,ServiceGps.class);
-            startService(intentGps);
-        }
-
-        m_iRun = D_NORUN;
 
         setContentView(R.layout.activity_main);
         chrono = (TextView) findViewById(R.id.Chrono);
@@ -162,16 +176,28 @@ public class MainActivity extends Activity implements AdapterView.OnItemClickLis
         timeHandler.postDelayed(new Runnable() {
             @Override
             public void run() {
-                actualTime.setText(new SimpleDateFormat("HH:mm").format(new Date()));
+
+                String displayTime = new SimpleDateFormat("HH:mm").format(new Date());
+
+                // launch a timer that updates every seconds
+                actualTime.setText(displayTime);
+
+                // at midnight, udpate current date
+                if (_currentDate == null || _currentDate.isEmpty() || displayTime == "00:00") {
+                    _currentDate = new SimpleDateFormat("yyyy-MM-dd").format(new Date());
+                }
+
                 timeHandler.postDelayed(this, 1000);
             }
-        }, 10);
+        }, 1000);
 
         vibrator = (Vibrator) this.getApplicationContext().getSystemService(Context.VIBRATOR_SERVICE);
 
         chronoHandler = new Handler();
 
-        ListElementsArrayList = new ArrayList<String>(Arrays.asList(ListElements));
+        ListElementsArrayList = new ArrayList<String>();
+
+        ListGpsArrayList = new ArrayList<String>();
 
         adapter = new ArrayAdapter<String>(MainActivity.this,
                 R.layout.listlayout,
@@ -189,8 +215,6 @@ public class MainActivity extends Activity implements AdapterView.OnItemClickLis
 
                     LapTime = 0L;
                     MillisecondTime = 0L;
-                    TimeBuff = 0L;
-                    UpdateTime = 0L;
                     Seconds = 0;
                     Minutes = 0;
                     MilliSeconds = 0;
@@ -202,8 +226,16 @@ public class MainActivity extends Activity implements AdapterView.OnItemClickLis
 
                 } else { // otherwise we stop it
 
-                    TimeBuff += MillisecondTime;
+                    // save the last lap
+                    NewLap();
+
+                    // stop chrono
                     chronoHandler.removeCallbacks(runnable);
+
+                    // display total time
+                    MillisecondTime = SystemClock.uptimeMillis() - StartTime;
+                    DisplayTime(MillisecondTime);
+
                     StartTime = 0L;
                     stop.setText("Reset");
 
@@ -225,40 +257,34 @@ public class MainActivity extends Activity implements AdapterView.OnItemClickLis
         });
 
 
+        // create gps service
+        gps = new GPSTracker(MainActivity.this);
+
+        // update diplay
+        chronoHandler.postDelayed(runnable, 0);
+
+        // keep screen on for gps search
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+
     }
 
+    public void DisplayTime(long MillisecondTime) {
 
-    private ServiceConnection mConnection = new ServiceConnection() {
-        public void onServiceConnected(ComponentName className, IBinder service) {
-            mService = new Messenger(service);
-            try {
-                Message msg = Message.obtain(null, ServiceGps.MSG_REGISTER_CLIENT);
-                msg.replyTo = mMessenger;
-                mService.send(msg);
-            } catch (RemoteException e) {
-                // In this case the service has crashed before we could even do anything with it
-            }
-        }
+        Seconds = (int) (MillisecondTime / 1000);
 
-        public void onServiceDisconnected(ComponentName className) {
-            // This is called when the connection with the service has been unexpectedly disconnected - process crashed.
-            mService = null;
-        }
-    };
+        Minutes = Seconds / 60;
 
-    private boolean CheckIfServiceIsRunning() {
+        Seconds = Seconds % 60;
 
-        boolean bServiceRunning = true;
+        MilliSeconds = (int) (MillisecondTime % 1000);
 
-        //If the service is running when the activity starts, we want to automatically bind to it.
-        if (ServiceGps.isRunning()) {
-            doBindService();
-        }else{
-            bServiceRunning = false;
-        }
+        CentiSeconds = MilliSeconds / 10;
 
-        return bServiceRunning;
+        chrono.setText("" + String.format("%02d", Minutes) + ":"
+                + String.format("%02d", Seconds) + ":"
+                + String.format("%02d", CentiSeconds));
     }
+
     public void SaveData() {
 
         if (!ListElementsArrayList.isEmpty()) {
@@ -274,6 +300,9 @@ public class MainActivity extends Activity implements AdapterView.OnItemClickLis
             // save the csv file
             if (csvDir != null) {
                 WriteCsvFile(csvDir);
+                if (ListGpsArrayList != null && !ListGpsArrayList.isEmpty()) {
+                    WriteGpxFile(csvDir);
+                }
             }
 
             Toast.makeText(getApplicationContext(), "File saved", Toast.LENGTH_LONG).show();
@@ -328,6 +357,64 @@ public class MainActivity extends Activity implements AdapterView.OnItemClickLis
 
     }
 
+    public void WriteGpxFile(File sd) {
+
+        if (sd != null) {
+
+            // creating a unique name
+            String formattedDate = new SimpleDateFormat("yyyyMMddHHmmss").format(new Date());
+            String gpxFilePath = "run" + formattedDate + ".gpx";
+
+            // creating the file
+            File gpxFile = new File(sd.getAbsolutePath(), gpxFilePath);
+
+            try {
+
+                if (gpxFile != null) {
+
+                    int i = 0;
+                    String body = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\" ?>\\n";
+                    body += "<gpx xmlns=\"http://www.topografix.com/GPX/1/1\" creator=\"IntervalTriggerGps\" version=\"1.1\" \\n";
+                    body += "xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" \\n";
+                    body += "xsi:schemaLocation=\"http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd\">\\n";
+                    body += "<metadata>\\n";
+                    body += "<name>" + gpxFilePath + "</name>\\n";
+                    body += "<link href=\"\">\\n";
+                    body += "<text>IntervalTriggerGps</text>\\n";
+                    body += "</link>\\n";
+                    body += String.format("<time>%s</time>\\n", _startTime);
+                    body += "</metadata>\\n";
+                    body += "<trk>\\n";
+                    body += "<trkseg>\\n";
+                    // foreach Trackpoint we add a line
+                    for (String gpsTrkpt :
+                            ListGpsArrayList) {
+                        body += gpsTrkpt;
+                    }
+
+
+                    body += " </trkseg>\\n";
+                    body += "</trk>\\n";
+                    body += "</gpx>";
+
+                    FileWriter writer = new FileWriter(gpxFile);
+                    if (writer != null) {
+                        writer.append(body);
+                        writer.flush();
+                        writer.close();
+                    }
+
+                }
+
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
+        }
+
+    }
+
+
     public void onItemClick(AdapterView<?> l, View v, int position, long id) {
 
         // if chrono is stopped and listview contains data we save it
@@ -353,12 +440,25 @@ public class MainActivity extends Activity implements AdapterView.OnItemClickLis
         // keep screen on until we stop
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
+        // clear any data present in list
+        ListElementsArrayList.clear();
+        adapter.notifyDataSetChanged();
+
         // record start time timestamp
         StartTime = SystemClock.uptimeMillis();
         // laptime and starttime are equal on first lap
         LapTime = StartTime;
+
+        // reset length data
+        if (gps != null) {
+            gps.setLength(0);
+            String currentTime = new SimpleDateFormat("HH:mm:ss.SSS").format(new Date());
+
+            _startTime = String.format("%sT%sZ", _currentDate, currentTime);
+        }
+
         // launching callback
-        chronoHandler.postDelayed(runnable, 0);
+        chronoHandler.postDelayed(runnable, 10);
     }
 
     public void NewLap() {
@@ -380,12 +480,28 @@ public class MainActivity extends Activity implements AdapterView.OnItemClickLis
 
     public void onChronoClick(View v) {
 
-        // if chrono is off we start it
-        if (StartTime == 0L) {
-            StartChrono();
-        } else { // otherwise it's a lap start
-            NewLap();
+
+        // check if GPS enabled
+        if (gps.canGetLocation()) {
+
+            // if gps is ready we can start running
+            if (gps.isGPSReady()) {
+                // if chrono is off we start it
+                if (StartTime == 0L) {
+                    StartChrono();
+                } else { // otherwise it's a lap start
+                    NewLap();
+                }
+            }
+
+
+        } else {
+            // can't get location
+            // GPS or Network is not enabled
+            // Ask user to enable GPS/network in settings
+            gps.showSettingsAlert();
         }
+
 
         // vibration to assert the click was recorded
         vibrator.vibrate(50);
@@ -403,6 +519,9 @@ public class MainActivity extends Activity implements AdapterView.OnItemClickLis
     @Override
     protected void onDestroy() {
 
+        gps.stopUsingGPS();
+        gps.onDestroy();
+
         // we have to remove callbacks before exiting
         chronoHandler.removeCallbacks(runnable);
         timeHandler.removeCallbacks(null);
@@ -410,7 +529,6 @@ public class MainActivity extends Activity implements AdapterView.OnItemClickLis
 
 
     }
-
 
 
 }
